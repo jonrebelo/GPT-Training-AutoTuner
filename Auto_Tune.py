@@ -14,8 +14,8 @@ print(device)
 # Define the parameters for the model and training
 block_size = 128
 batch_size = 64
-max_iters = 3000
-eval_interval = 500
+max_iters = 2100
+eval_interval = 700
 learning_rate = 3e-4
 eval_iters = 250
 n_embd = 384
@@ -185,12 +185,25 @@ def estimate_loss(model):
     return out
 
 
+def load_tested_iterations():
+    try:
+        with open("tested_iterations.pkl", "rb") as f:
+            tested_iterations = pickle.load(f)
+            print("Parameters already saved:", tested_iterations.keys())  # Print saved parameters
+            return tested_iterations
+    except FileNotFoundError:
+        return {}
+
+
+def save_tested_iterations(tested_iterations):
+    with open("tested_iterations.pkl", "wb") as f:
+        pickle.dump(tested_iterations, f)
+        print("Combination saved")  # Print when combination is saved
+
+
 def hyperparameter_search():
-    if os.path.exists("best_models.pt"):
-        with open("best_models.pt", "rb") as f:
-            tested_models = pickle.load(f)
-    else:
-        tested_models = {}
+    # Load existing tested iterations
+    tested_iterations = load_tested_iterations()
 
     learning_rates = [1e-5, 3e-4, 5e-3]
     batch_sizes = [16, 32, 64]
@@ -202,8 +215,10 @@ def hyperparameter_search():
     best_val_loss = float('inf')
     best_hyperparams = None
 
+    model = GPTLanguageModel(vocab_size).to(device)
+
     for lr, bs, dr, embd, layer, head in itertools.product(learning_rates, batch_sizes, dropouts, n_embds, n_layers, n_heads):
-        if (lr, bs, dr, embd, layer, head) in tested_models:
+        if (lr, bs, dr, embd, layer, head) in tested_iterations:
             continue
         print(f"Evaluating combination: lr={lr}, batch_size={bs}, dropout={dr}, n_embd={embd}, n_layer={layer}, n_head={head}")
 
@@ -214,14 +229,11 @@ def hyperparameter_search():
         n_layer = layer
         n_head = head
 
-        model = GPTLanguageModel(vocab_size).to(device)
-
         vram_usage = torch.cuda.memory_allocated()
         if vram_usage > 9.7e9:  # 9.7GB in bytes
             print("Skipping current iteration due to excessive VRAM usage")
             continue
 
-        model = GPTLanguageModel(vocab_size).to(device)
         optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max_iters)
         scaler = torch.cuda.amp.GradScaler()
@@ -236,7 +248,7 @@ def hyperparameter_search():
                     best_val_loss = val_loss
                     best_hyperparams = (lr, bs, dr, embd, layer, head)
                     torch.save(model.state_dict(), "best_model.pt")
-                    tested_models[best_hyperparams] = best_val_loss
+                    tested_iterations[best_hyperparams] = best_val_loss
 
             xb, yb = get_batch('train')
 
@@ -247,14 +259,18 @@ def hyperparameter_search():
             scaler.scale(loss).backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             scaler.step(optimizer)
+            old_scaler = scaler.get_scale()
             scaler.update()
-            scheduler.step()
+            new_scaler = scaler.get_scale()
+            if new_scaler == old_scaler:
+                scheduler.step()
+            optimizer.zero_grad()
 
         print(f"Finished combination: lr={lr}, batch_size={bs}, dropout={dr}, n_embd={embd}, n_layer={layer}, n_head={head}, val_loss={val_loss:.3f}")
+        save_tested_iterations(tested_iterations)
 
     print(f"Best hyperparameters found: lr={best_hyperparams[0]}, batch_size={best_hyperparams[1]}, dropout={best_hyperparams[2]}, n_embd={best_hyperparams[3]}, n_layer={best_hyperparams[4]}, n_head={best_hyperparams[5]} with val_loss={best_val_loss:.3f}")
-
-    return tested_models
+    return tested_iterations
 
 tested_models = hyperparameter_search()
 
