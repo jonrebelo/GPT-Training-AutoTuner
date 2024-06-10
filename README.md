@@ -8,6 +8,7 @@ Features
     VRAM Limits: Checks VRAM usage to ensure the model fits within GPU memory limits, useful for avoiding out-of-memory errors.
     Hyperparameter Search: Perform grid search over various hyperparameter combinations to find the best model configuration.
     Text Generation: Generate text sequences based on the trained model.
+    Utilizes Tensor Cores on RTX GPUs when available.
 
 # Installation
 
