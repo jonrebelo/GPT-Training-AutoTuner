@@ -4,7 +4,6 @@ from torch.nn import functional as F
 import mmap
 import random
 import pickle
-import argparse
 import itertools
 import os
 
@@ -32,7 +31,7 @@ with open("training_data/vocab.txt", "r", encoding="utf-8") as f:
 
 vocab_size = len(chars)
 string_to_int = {ch: i for i, ch in enumerate(chars)}
-int_to_string = {i: ch for i, ch in enumerate(chars)}
+int_to_string = {i: ch for i in enumerate(chars)}
 encode = lambda s: [string_to_int[c] for c in s]
 decode = lambda l: ''.join([int_to_string[i] for i in l])
 
@@ -124,6 +123,7 @@ class Block(nn.Module):
         x = self.ln2(x + y)
         return x
 
+
 class GPTLanguageModel(nn.Module):
     def __init__(self, vocab_size):
         super().__init__()
@@ -184,15 +184,14 @@ def estimate_loss(model):
     model.train()
     return out
 
-# Hyperparameter search
+
 def hyperparameter_search():
-        # Load the dictionary of tested models if it exists
     if os.path.exists("best_models.pt"):
         with open("best_models.pt", "rb") as f:
             tested_models = pickle.load(f)
     else:
         tested_models = {}
-    # Define the search space including n_embd, n_layer, and n_head
+
     learning_rates = [1e-5, 3e-4, 5e-3]
     batch_sizes = [16, 32, 64]
     dropouts = [0.1, 0.25, .4,]
@@ -217,11 +216,11 @@ def hyperparameter_search():
 
         model = GPTLanguageModel(vocab_size).to(device)
 
-    # Check VRAM usage
         vram_usage = torch.cuda.memory_allocated()
         if vram_usage > 9.7e9:  # 9.7GB in bytes
             print("Skipping current iteration due to excessive VRAM usage")
             continue
+
         model = GPTLanguageModel(vocab_size).to(device)
         optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max_iters)
@@ -237,7 +236,6 @@ def hyperparameter_search():
                     best_val_loss = val_loss
                     best_hyperparams = (lr, bs, dr, embd, layer, head)
                     torch.save(model.state_dict(), "best_model.pt")
-                    # Add the model to the dictionary of tested models
                     tested_models[best_hyperparams] = best_val_loss
 
             xb, yb = get_batch('train')
@@ -258,15 +256,11 @@ def hyperparameter_search():
 
     return tested_models
 
-
-
-# Run the hyperparameter search
 tested_models = hyperparameter_search()
 
-# Load the best model and generate text
 model = GPTLanguageModel(vocab_size)
 model.load_state_dict(torch.load("best_model.pt"))
 model = model.to(device)
 
 with open("best_model.pt", "wb") as f:
-        pickle.dump(tested_models, f)
+    pickle.dump(tested_models, f)
