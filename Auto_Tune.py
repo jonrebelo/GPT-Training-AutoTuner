@@ -6,6 +6,7 @@ import random
 import pickle
 import itertools
 import os
+import random
 
 # Check if CUDA is available and if so, set the device accordingly
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -14,10 +15,10 @@ print(device)
 # Define the parameters for the model and training
 block_size = 128
 batch_size = 64
-max_iters = 2100
-eval_interval = 700
+max_iters = 2600
+eval_interval = 500
 learning_rate = 3e-4
-eval_iters = 250
+eval_iters = 500
 n_embd = 384
 n_layer = 8
 n_head = 8
@@ -205,22 +206,27 @@ def hyperparameter_search():
     # Load existing tested iterations
     tested_iterations = load_tested_iterations()
 
-    learning_rates = [1e-5, 3e-4, 5e-3]
-    batch_sizes = [16, 32, 64]
-    dropouts = [0.1, 0.25, .4,]
-    n_embds = [320, 384, 448, 512]
+    learning_rates = [3e-4, 7e-4, 5e-3]
+    batch_sizes = [64, 80]
+    dropouts = [0.1, 0.2, 0.3]
+    n_embds = [448, 512, 576]
     n_layers = [8, 10]
     n_heads = [8, 12]
+
+    # Create a list of all possible combinations
+    all_combinations = list(itertools.product(learning_rates, batch_sizes, dropouts, n_embds, n_layers, n_heads))
+    # Shuffle the list of combinations randomly
+    random.shuffle(all_combinations)
 
     best_val_loss = float('inf')
     best_hyperparams = None
 
-    model = GPTLanguageModel(vocab_size).to(device)
-
-    for lr, bs, dr, embd, layer, head in itertools.product(learning_rates, batch_sizes, dropouts, n_embds, n_layers, n_heads):
+    for lr, bs, dr, embd, layer, head in all_combinations:
         if (lr, bs, dr, embd, layer, head) in tested_iterations:
             continue
         print(f"Evaluating combination: lr={lr}, batch_size={bs}, dropout={dr}, n_embd={embd}, n_layer={layer}, n_head={head}")
+
+        model = GPTLanguageModel(vocab_size).to(device)
 
         global batch_size, dropout, n_embd, n_layer, n_head
         batch_size = bs
@@ -266,8 +272,9 @@ def hyperparameter_search():
                 scheduler.step()
             optimizer.zero_grad()
 
-        print(f"Finished combination: lr={lr}, batch_size={bs}, dropout={dr}, n_embd={embd}, n_layer={layer}, n_head={head}, val_loss={val_loss:.3f}")
         save_tested_iterations(tested_iterations)
+        print(f"Finished combination: lr={lr}, batch_size={bs}, dropout={dr}, n_embd={embd}, n_layer={layer}, n_head={head}, val_loss={val_loss:.3f}")
+    
 
     print(f"Best hyperparameters found: lr={best_hyperparams[0]}, batch_size={best_hyperparams[1]}, dropout={best_hyperparams[2]}, n_embd={best_hyperparams[3]}, n_layer={best_hyperparams[4]}, n_head={best_hyperparams[5]} with val_loss={best_val_loss:.3f}")
     return tested_iterations
@@ -277,6 +284,3 @@ tested_models = hyperparameter_search()
 model = GPTLanguageModel(vocab_size)
 model.load_state_dict(torch.load("best_model.pt"))
 model = model.to(device)
-
-with open("best_model.pt", "wb") as f:
-    pickle.dump(tested_models, f)
